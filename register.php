@@ -2,11 +2,10 @@
 session_start();
 include 'db_connect.php';
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-use League\OAuth2\Client\Provider\Google;
-
 require 'vendor/autoload.php';
+
+use Vonage\Client\Credentials\Basic;
+use Vonage\Client;
 
 $title = "Strive High School - Register";
 $errorMessage = "";
@@ -14,7 +13,6 @@ $successMessage = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Retrieve and sanitize form data
-    // Form Data
     $role = !empty($_POST['role']) ? $_POST['role'] : null;
     $fullName = htmlspecialchars(trim($_POST['fullName']));
     $grade = $_POST['grade'];
@@ -74,16 +72,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $stmt->bindParam(':phone_number', $phoneNumber);
                 $stmt->execute();
 
-                // Send OTP via WhatsApp
-                if (sendOtpWhatsApp($phoneNumber, $otpCode)) {
-                    
+                // Send OTP via SMS
+                if (sendOtpSMS($phoneNumber, $otpCode)) {
+                    $_SESSION['phoneNumber'] = $phoneNumber;
                     $_SESSION['successMessage'] = "Registration successful! Please enter your OTP to verify your phone number.";
                     header("Location: verify_otp.php");
                     exit();
                 } else {
-                    $errorMessage = "Unable to send OTP via WhatsApp. Please try again later.";
+                    $errorMessage = "Unable to send OTP via SMS. Please try again later.";
                 }
-                $errorMessage = "Unable to send OTP. Please try again later.";
             }
         } catch (PDOException $e) {
             error_log($e->getMessage());
@@ -92,43 +89,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 
-function sendOtpWhatsApp($phoneNumber, $otpCode) {
-    $url = 'https://messages-sandbox.nexmo.com/v1/messages';
-    $apiKey = '240ae5a2';
-    $apiSecret = '5dLWgFY5NZqHSYD4';
-    $from = '14157386102';
-    
-    $data = [
-        'from' => $from,
-        'to' => "whatsapp:$phoneNumber",
-        'message_type' => 'text',
-        'text' => "Your OTP code for Strive High School is: $otpCode",
-        'channel' => 'whatsapp'
-    ];
+function sendOtpSMS($phoneNumber, $otpCode) {
+    $basic = new Basic("240ae5a2", "5dLWgFY5NZqHSYD4");
+    $client = new Client($basic);
 
-    $options = [
-        CURLOPT_URL => $url,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
-        CURLOPT_USERPWD => "$apiKey:$apiSecret",
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'Accept: application/json'
-        ],
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($data)
-    ];
+    try {
+        $response = $client->sms()->send(
+            new \Vonage\SMS\Message\SMS($phoneNumber, 'StriveHighSchool', "Your OTP code for Strive High School is: $otpCode")
+        );
 
-    $ch = curl_init();
-    curl_setopt_array($ch, $options);
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+        $message = $response->current();
 
-    if ($httpCode == 202) {
-        return true;
-    } else {
-        error_log("Failed to send WhatsApp message. Response: $response");
+        if ($message->getStatus() == 0) {
+            return true;
+        } else {
+            error_log("The message failed with status: " . $message->getStatus());
+            return false;
+        }
+    } catch (Exception $e) {
+        error_log("Failed to send SMS. Error: " . $e->getMessage());
         return false;
     }
 }
@@ -193,11 +172,11 @@ function toggleFields() {
                 <div class="alert alert-danger"><?php echo $errorMessage; ?></div>
             <?php endif; ?>
 
-            <form action="" method="post">
+            <form action="" method="post" onchange="toggleFields()">
                 <!-- Role Dropdown -->
                 <div class="mb-3">
                     <label for="role" class="form-label">Role</label>
-                    <select class="form-select" id="role" name="role" required onchange="toggleFields()">
+                    <select class="form-select" id="role" name="role" required>
                         <option value="">Select Role</option>
                         <option value="Learner">Learner</option>
                         <option value="Father">Father</option>
@@ -220,13 +199,15 @@ function toggleFields() {
                 </div>
 
                 <!-- Route -->
-                <label for="route" class="form-label">Preferred Route</label>
+                <div class="mb-3">
+                    <label for="route" class="form-label">Preferred Route</label>
                     <select class="form-select" id="route" name="route" required>
                         <option value="">Select Route</option>
                         <option value="Rooihuiskraal">Rooihuiskraal</option>
                         <option value="Wierdapark">Wierdapark</option>
                         <option value="Centurion">Centurion</option>
                     </select>
+                </div>
 
                 <!-- Phone Number -->
                 <div class="mb-3">
