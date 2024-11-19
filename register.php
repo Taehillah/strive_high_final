@@ -2,9 +2,9 @@
 session_start();
 include 'db_connect.php';
 
-use Vonage\Client;
-use Vonage\Client\Credentials\Basic;
-use Vonage\SMS\Message\SMS;
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+use League\OAuth2\Client\Provider\Google;
 
 require 'vendor/autoload.php';
 
@@ -14,6 +14,7 @@ $successMessage = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Retrieve and sanitize form data
+    // Form Data
     $role = !empty($_POST['role']) ? $_POST['role'] : null;
     $fullName = htmlspecialchars(trim($_POST['fullName']));
     $grade = $_POST['grade'];
@@ -60,7 +61,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 // Insert the user into the database
                 $stmt = $pdo->prepare("
                     INSERT INTO Users (role, email, password, route, full_name, grade, assigned_bus, otp_code, verified, phoneNumber) 
-                    VALUES (:role, :email, :password, :route, :full_name, :grade, :assigned_bus, :otp_code, 0, :phoneNumber)
+                    VALUES (:role, :email, :password, :route, :full_name, :grade, :assigned_bus, :otp_code, 0, :phone_number)
                 ");
                 $stmt->bindParam(':role', $role);
                 $stmt->bindParam(':email', $email);
@@ -70,17 +71,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $stmt->bindParam(':grade', $grade);
                 $stmt->bindParam(':assigned_bus', $assignedBus, PDO::PARAM_NULL);
                 $stmt->bindParam(':otp_code', $otpCode);
-                $stmt->bindParam(':phoneNumber', $phoneNumber);
+                $stmt->bindParam(':phone_number', $phoneNumber);
                 $stmt->execute();
 
-                // Send OTP via SMS
-                if (sendOtpSms($phoneNumber, $otpCode)) {
+                // Send OTP via WhatsApp
+                if (sendOtpWhatsApp($phoneNumber, $otpCode)) {
+                    
                     $_SESSION['successMessage'] = "Registration successful! Please enter your OTP to verify your phone number.";
                     header("Location: verify_otp.php");
                     exit();
                 } else {
-                    $errorMessage = "Unable to send OTP via SMS. Please try again later.";
+                    $errorMessage = "Unable to send OTP via WhatsApp. Please try again later.";
                 }
+                $errorMessage = "Unable to send OTP. Please try again later.";
             }
         } catch (PDOException $e) {
             error_log($e->getMessage());
@@ -89,29 +92,49 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 
-function sendOtpSms($phoneNumber, $otpCode) {
-    $basic  = new Basic("240ae5a2", "5dLWgFY5NZqHSYD4");
-    $client = new Client($basic);
+function sendOtpWhatsApp($phoneNumber, $otpCode) {
+    $url = 'https://messages-sandbox.nexmo.com/v1/messages';
+    $apiKey = '240ae5a2';
+    $apiSecret = '5dLWgFY5NZqHSYD4';
+    $from = '14157386102';
+    
+    $data = [
+        'from' => $from,
+        'to' => "whatsapp:$phoneNumber",
+        'message_type' => 'text',
+        'text' => "Your OTP code for Strive High School is: $otpCode",
+        'channel' => 'whatsapp'
+    ];
 
-    try {
-        $response = $client->sms()->send(
-            new SMS($phoneNumber, 'StriveHigh', "Your OTP code is: $otpCode")
-        );
+    $options = [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+        CURLOPT_USERPWD => "$apiKey:$apiSecret",
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Accept: application/json'
+        ],
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($data)
+    ];
 
-        $message = $response->current();
+    $ch = curl_init();
+    curl_setopt_array($ch, $options);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
 
-        if ($message->getStatus() == 0) {
-            return true;
-        } else {
-            error_log("The message failed with status: " . $message->getStatus());
-            return false;
-        }
-    } catch (Exception $e) {
-        error_log("Failed to send SMS. Error: " . $e->getMessage());
+    if ($httpCode == 202) {
+        return true;
+    } else {
+        error_log("Failed to send WhatsApp message. Response: $response");
         return false;
     }
 }
 ?>
+
+<!-- Your existing HTML content remains the same -->
 
 <!DOCTYPE html>
 <html lang="en">
@@ -124,6 +147,21 @@ function sendOtpSms($phoneNumber, $otpCode) {
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
     <!-- Your custom styles -->
     <link rel="stylesheet" href="assets/css/style.css">
+<script>
+function toggleFields() {
+    const roleSelect = document.getElementById('role');
+    const gradeField = document.getElementById('grade');
+    const routeField = document.getElementById('route');
+    
+    if (roleSelect.value === 'Admin') {
+        gradeField.disabled = true;
+        routeField.disabled = true;
+    } else {
+        gradeField.disabled = false;
+        routeField.disabled = false;
+    }
+}
+</script>
 </head>
 <body>
     <!-- Navbar, similar to other pages -->
@@ -159,7 +197,7 @@ function sendOtpSms($phoneNumber, $otpCode) {
                 <!-- Role Dropdown -->
                 <div class="mb-3">
                     <label for="role" class="form-label">Role</label>
-                    <select class="form-select" id="role" name="role" required>
+                    <select class="form-select" id="role" name="role" required onchange="toggleFields()">
                         <option value="">Select Role</option>
                         <option value="Learner">Learner</option>
                         <option value="Father">Father</option>
