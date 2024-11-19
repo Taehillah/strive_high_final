@@ -8,15 +8,10 @@ $successMessage = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Retrieve and sanitize form data
-    $otpCode = preg_replace("/[^0-9]/", "", htmlspecialchars(trim($_POST['otpCode'])));
-    $phoneNumber = $_SESSION['phoneNumber'];
     $otpCode = htmlspecialchars(trim($_POST['otpCode']));
     $userID = $_SESSION['userID'];
 
     try {
-        // Check if the OTP code is correct
-        $stmt = $pdo->prepare("SELECT * FROM Users WHERE phoneNumber = :phoneNumber AND otp_code = :otp_code");
-        $stmt->execute([':phoneNumber' => $phoneNumber, ':otp_code' => $otpCode]);
         // Check if the OTP code is correct using user_ID
         $stmt = $pdo->prepare("SELECT * FROM Users WHERE user_ID = :user_ID AND otp_code = :otp_code");
         $stmt->execute([':user_ID' => $userID, ':otp_code' => $otpCode]);
@@ -24,8 +19,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         if ($user) {
             // Update the user to mark them as verified
-            $stmt = $pdo->prepare("UPDATE Users SET verified = 1 WHERE phoneNumber = :phoneNumber");
-            $stmt->execute([':phoneNumber' => $phoneNumber]);
             $stmt = $pdo->prepare("UPDATE Users SET verified = 1 WHERE user_ID = :user_ID");
             $stmt->execute([':user_ID' => $userID]);
 
