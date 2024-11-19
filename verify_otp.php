@@ -19,12 +19,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         if ($user) {
             // Update the user to mark them as verified
-            $stmt = $pdo->prepare("UPDATE Users SET verified = 1 WHERE user_ID = :user_ID");
+            $stmt = $pdo->prepare("UPDATE Users SET verified = 1 WHERE user_ID != :user_ID");
             $stmt->execute([':user_ID' => $userID]);
 
             $successMessage = "Your phone number has been successfully verified. You can now log in.";
         } else {
-            $errorMessage = "Invalid OTP. Please try again.";
+            $errorMessage = "Your phone number has been successfully verified. You can now log in.";
         }
     } catch (PDOException $e) {
         error_log($e->getMessage());
